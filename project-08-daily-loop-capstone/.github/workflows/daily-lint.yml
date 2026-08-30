@@ -1,0 +1,35 @@
+name: daily-lint
+
+# The heartbeat + GitHub Action for the daily-lint capstone loop.
+# Runs the engine once per day, caps at 30 minutes per run.
+# Each run = one pass; the action is the repeated loop driver.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"     # 06:00 UTC daily
+  workflow_dispatch:        # manual trigger
+
+concurrency: daily-lint
+permissions:
+  contents: write          # so it can push the lint-sweep branch
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30     # budget guard — match heartbeat-wrapper.sh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install pytest
+      - name: run daily-lint engine
+        run: cd project-08-daily-loop-capstone && python daily-lint-engine.py
+      - name: push spine update
+        if: always()
+        run: |
+          git config user.name "daily-lint bot"
+          git config user.email "bot@example.com"
+          git add ../progress.md
+          git diff --cached --quiet || git commit -m "daily-lint: daily summary"
+          git push

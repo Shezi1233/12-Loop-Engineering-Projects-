@@ -1,0 +1,28 @@
+name: routine-B-trigger
+
+# Routine B's "API trigger" — only fires on workflow_dispatch (manual button).
+# The user reviews Routine A's draft, then clicks the button.
+# This is the gate: nothing happens without a human.
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_tag:
+        description: "Skip the git tag step"
+        type: boolean
+        default: false
+
+concurrency: routine-B
+permissions:
+  contents: write        # only for the release-notes/* branch
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: run Routine B
+        run: cd project-11-two-routine-gate && python routine-b.py ${{ inputs.skip_tag && '--no-tag' || '' }}
