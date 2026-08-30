@@ -177,3 +177,39 @@ Action needed: see `diagnose.py` and the spine note above.
 - repeated failures found: 3
 - verdict: DRY_RUN
 - pr: none
+
+## 2026-08-30 12:26 — Dreaming Loop
+
+- repeated failures found: 0
+- verdict: NO_REPEATED_FAILURE
+- pr: none
+
+## 2026-08-27 12:26 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 12.3s
+- branch: `daily-lint-1787858811`
+- engine: daily-lint-engine.py
+- reason: 'non-minimal diff: removed 1 `- 1`, other changes: 0'
+
+## 2026-08-28 12:26 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 12.3s
+- branch: `daily-lint-1787945211`
+- engine: daily-lint-engine.py
+- reason: 'non-minimal diff: removed 1 `- 1`, other changes: 0'
+
+## 2026-08-29 12:26 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 12.3s
+- branch: `daily-lint-1788031611`
+- engine: daily-lint-engine.py
+- reason: 'non-minimal diff: removed 1 `- 1`, other changes: 0'
+
+## 2026-08-30 12:26 — Dreaming Loop
+
+- repeated failures found: 7
+- verdict: DRY_RUN
+- pr: none

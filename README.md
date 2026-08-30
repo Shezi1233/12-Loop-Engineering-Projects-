@@ -34,24 +34,27 @@ Clone or open the folder, read the project README, and follow its instructions.
 | 1 | Watch loop | ✅ Fully verified |
 | 2 | Tests pass then stop | ✅ Fully verified |
 | 3 | Morning brief with memory | ✅ Fully verified (after UTF-8 + CRLF fixes) |
-| 4 | Fix loop with real checker | ⚠️ Code fixed, needs re-test (git init done, conftest.py added) |
-| 5 | Codify the body | ⚠️ Depends on Project 4 git state |
-| 6 | Doorbell loop | ⚠️ Not yet tested |
-| 7 | Break it on purpose | ⚠️ Not yet tested |
-| 8 | Daily loop capstone | ⚠️ Tests pass (5/5), needs git init + engine run |
-| 9 | Rehearse routine free | ⚠️ Not yet tested |
-| 10 | Secrets drill | ⚠️ Not yet tested |
-| 11 | Two-routine gate | ⚠️ Not yet tested, needs git init |
-| 12 | Dreaming loop | ⚠️ Not yet tested, needs git init in root |
+| 4 | Fix loop with real checker | ✅ Fully verified — good fix PASS+PR, bad fix FAIL |
+| 5 | Codify the body | ✅ Fully verified — 2 candidates, both PASS |
+| 6 | Doorbell loop | ✅ Fully verified — pytest fails, reviewer detects planted bug |
+| 7 | Break it on purpose | ✅ Fully verified — measure/sabotage/diagnose all work |
+| 8 | Daily loop capstone | ✅ Fully verified — engine runs, PASS verdict |
+| 9 | Rehearse routine free | ✅ Fully verified — success and fail transcripts correct |
+| 10 | Secrets drill | ✅ Fully verified — both env-file and env-var modes work |
+| 11 | Two-routine gate | ✅ Fully verified — Routine A drafts, Routine B publishes |
+| 12 | Dreaming loop | ✅ Fully verified — finds repeated failures, drafts PR |
 
-## Bugs fixed during initial testing (next session — re-verify)
+## Bugs fixed during testing (all verified)
 
-1. **Project 3 (morning-brief.py):** Windows cp1252 default encoding was mangling the em-dash (—) in the regex. Fixed by forcing `encoding="utf-8"` on all file reads. Also changed regex to use `\r?\n` for Windows CRLF line endings.
-2. **Project 4 (implementer.py):** Used Unix `date` command which doesn't exist on Windows. Fixed by using Python's `time.time()`. Git repo initialized in project folder (`main` branch created, master deleted).
-3. **Project 4, 5, 6, 8:** Added `conftest.py` to each project that needs it — makes local modules importable for pytest (otherwise `from buggy_math import ...` fails with `ModuleNotFoundError`).
-
-## To resume testing (next session)
-
-Start with Project 4 (the dependency point). If Project 4 works, Projects 5 and 8 will be unblocked. The other projects (6, 7, 9, 10, 11, 12) don't depend on earlier ones and can be tested in any order.
-
-Each project README has a "Test Status" section at the bottom with the exact commands to run.
+1. **Project 3, 7 (morning-brief.py):** Windows cp1252 mangling em-dash. Fixed: forced `encoding="utf-8"` on all file reads. Regex now uses `\r?\n` for CRLF.
+2. **Project 4 (buggy-math.py → buggy_math.py):** Hyphenated filename is not importable as a Python module. Fixed: renamed to underscore, updated all code references.
+3. **Project 4 (implementer.py):** Regex `\s*$` ate trailing newlines, making diff non-minimal. Fixed: used lookahead `(?=[ \t]*\n)` to anchor only to end-of-line.
+4. **Project 4 (reviewer.py):** `git diff` showed no changes (fix was already committed). Fixed: `git diff main -- file` compares branch vs main.
+5. **Project 4 (reviewer.py):** `+` replacement lines were counted as "other changes". Fixed: separate counter for removed/added lines.
+6. **Project 4 (fix-loop.py):** Didn't checkout the implementer's branch before reviewer ran. Fixed: added `git checkout branch` after implementer.
+7. **Project 5, 8 (engine.py / reviewer.py):** Same hyphenated filename bug as Project 4. Fixed: renamed to underscore.
+8. **Project 8 (daily-lint-engine.py):** Syntax error (unclosed string). Fixed: closed string properly. Dead code removed.
+9. **Project 8 (implementer.py):** Tuple unpacking from subprocess.run (not unpackable). Fixed: removed the broken code, kept the correct subprocess call.
+10. **Project 8 (reviewer.py):** Compared working-tree diff vs HEAD (uncommitted changes). Fixed: `git diff main --` to compare against base branch.
+11. **Project 12 (dreaming-loop.py):** No encoding specified when reading spine. Fixed: `encoding="utf-8"` on read_text().
+12. **Projects 4, 5, 8, 11:** Each project required `git init` + `main` branch to be set up locally (no remote).
