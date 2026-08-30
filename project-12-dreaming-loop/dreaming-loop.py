@@ -11,8 +11,9 @@ A weekly-scheduled loop that:
 NEVER commits directly — always opens a PR so a human can review before merging.
 
 Usage:
-    python dreaming-loop.py                 # one pass
-    python dreaming-loop.py --dry-run      # don't push, just print what it would do
+    python dreaming-loop.py --live           # create PR for repeated failures
+    python dreaming-loop.py                  # dry-run: scan, report, don't create PR
+    python dreaming-loop.py --dry-run        # same as above (explicit)
 """
 
 import argparse
@@ -29,12 +30,17 @@ DREAMING_STATE = REPO / "project-12-dreaming-loop" / "dreaming-state.md"
 
 
 def read_dreaming_state() -> datetime:
-    """Return the date of the last dreaming loop run."""
+    """Return the datetime of the last dreaming loop run (date + time)."""
     if not DREAMING_STATE.exists():
         return None
-    content = DREAMING_STATE.read_text()
-    m = re.search(r"last run:\s*(\d{4}-\d{2}-\d{2})", content)
-    return datetime.strptime(m.group(1), "%Y-%m-%d") if m else None
+    content = DREAMING_STATE.read_text(encoding="utf-8")
+    # Match "last run: YYYY-MM-DD HH:MM" — includes time if present
+    m = re.search(r"last run:\s*(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?", content)
+    if not m:
+        return None
+    date_str = m.group(1)
+    time_str = m.group(2) or "00:00"
+    return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
 
 
 def parse_spine_entries(spine_text: str) -> list[dict]:
@@ -42,19 +48,21 @@ def parse_spine_entries(spine_text: str) -> list[dict]:
 
     Returns a list of dicts: {date, entry_type, content, raw}
     """
-    # Match entries like: "## YYYY-MM-DD HH:MM — Daily Lint Sweep" or
-    # "## YYYY-MM-DD HH:MM — Morning Brief"
     entries = []
-    # Find each top-level section (## heading)
+    # Match entries like: "## YYYY-MM-DD HH:MM — Daily Lint Sweep"
+    # Captures date-only for grouping, full datetime for comparison
     pattern = re.compile(
-        r"##\s+(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}\s+—\s+([^\n]+)\n\n(.*?)(?=\n##\s+\d{4}|\Z)",
+        r"##\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+—\s+([^\n]+)\n\n(.*?)(?=\n##\s+\d{4}|\Z)",
         re.DOTALL,
     )
     for m in pattern.finditer(spine_text):
+        date_str = m.group(1)
+        time_str = m.group(2)
+        full_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
         entries.append({
-            "date": datetime.strptime(m.group(1), "%Y-%m-%d"),
-            "entry_type": m.group(2).strip(),
-            "content": m.group(3).strip(),
+            "date": full_dt,
+            "entry_type": m.group(3).strip(),
+            "content": m.group(4).strip(),
             "raw": m.group(0),
         })
     return entries
@@ -63,15 +71,26 @@ def parse_spine_entries(spine_text: str) -> list[dict]:
 def find_repeated_failures(entries: list[dict]) -> list[dict]:
     """Find failure/correction cycles that repeat across entries.
 
-    A "repeated failure" is: FAIL verdict followed by PASS verdict, across 2+ runs.
-    This means the loop keeps encountering the same failure — time to codify a rule.
+    A "repeated failure" is: any entry with FAIL in its content.
+    Bucketed by failure reason to find patterns.
     """
     failures = []
     for entry in entries:
-        if "FAIL" in entry["content"]:
-            # Extract the failure reason
-            reason_m = re.search(r"(Reason:|verdict:.*FAIL.*?\n)(.*?)(?=\n-|\n\n|\Z)", entry["content"], re.DOTALL)
-            reason = reason_m.group(2).strip() if reason_m else "(unknown)"
+        content = entry["content"]
+        if "FAIL" in content:
+            # Extract the failure reason — prioritize "reason:" field over "verdict:"
+            # Many entries have both: "verdict: FAIL" and "reason: <actual reason>"
+            # We want the actual reason, not just the FAIL verdict
+            reason_m = re.search(
+                r"(?:^|\n)\s*[-*]?\s*reason:\s*(.+?)(?:\n|$)",
+                content,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            if reason_m:
+                reason = reason_m.group(1).strip()
+            else:
+                # Fallback: use first non-blank line of content
+                reason = content.split("\n")[0][:80]
             failures.append({
                 "date": entry["date"],
                 "entry_type": entry["entry_type"],
@@ -85,7 +104,8 @@ def find_repeated_corrections(failures: list[dict]) -> dict:
     """Find failures with the same reason across 2+ entries — a repeated pattern."""
     by_reason: dict[str, list] = {}
     for f in failures:
-        key = f["reason"].lower()[:60]  # bucket by reason prefix
+        # Normalize: lowercase, strip, use first 80 chars as bucket key
+        key = f["reason"].lower().strip()[:80]
         by_reason.setdefault(key, []).append(f)
 
     repeated = {k: v for k, v in by_reason.items() if len(v) >= 2}
@@ -100,26 +120,27 @@ def draft_rule_change(repeated_failures: dict, all_entries: list[dict]) -> str:
     # Pick the most repeated failure reason
     top_reason = max(repeated_failures.items(), key=lambda kv: len(kv[1]))
     reason_key, instances = top_reason
-    instance = instances[0]  # first occurrence as evidence
 
-    # Analyze the failure: " - 1" off-by-one pattern
+    # Build evidence list
     evidence_lines = []
     for f in instances:
-        evidence_lines.append(f"- {f['date'].strftime('%Y-%m-%d')}: {f['reason']}")
+        ts = f["date"].strftime("%Y-%m-%d %H:%M")
+        evidence_lines.append(f"- [{ts}] {f['entry_type']}: {f['reason']}")
 
     # Build the proposed skill change
     rule_change = f"""## Proposed Rule Change
 
-### Problem (evidence from {len(instances)} repeated occurrences)
+### Problem ({len(instances)} repeated occurrences)
+
 {"\n".join(evidence_lines)}
 
 ### Proposed fix
-Before applying a fix, check that the return statement has the pattern
-`return <expr> - 1` — this is the known off-by-one bug signature.
-If found, remove only the ` - 1` suffix and nothing else.
+
+Before applying any patch, identify whether the failure is a known pattern.
+If the diff contains ` - 1` in a return statement and tests are failing,
+the implementer should remove ONLY that specific ` - 1` and nothing else.
 
 ### Proposed skill file change (add to skill-lint-fix.md)
-Add a new check before patching:
 
 ```
 ## Pre-check: identify the off-by-one pattern
@@ -139,9 +160,9 @@ If not, STOP and report: "off-by-one pattern not confirmed".
 ```
 
 ### Why this prevents the repeat
-The implementer currently removes the FIRST ` - 1` it finds without checking
-whether it's the right one. This rule adds a confirmation step so it only
-fixes the specific off-by-one pattern, not any arbitrary ` - 1`.
+
+The implementer must confirm the off-by-one pattern before patching, not blindly
+remove the first ` - 1` it finds.
 """
     return rule_change
 
@@ -152,9 +173,9 @@ def draft_rule_deletion(all_entries: list[dict]) -> str:
     Scans all entries for rule keywords. If a rule was never cited in
     the last 30 days, suggest deleting it.
     """
-    # Known rules that have been used vs unused
     used_rules = set()
-    unused_rules = {"check-gitignore", "check-python-version"}
+    # These are the rules in the skill file — track which ones were actually used
+    known_rules = {"check-gitignore", "check-python-version", "check-return-statement"}
 
     for entry in all_entries:
         content = entry["content"].lower()
@@ -162,17 +183,18 @@ def draft_rule_deletion(all_entries: list[dict]) -> str:
             used_rules.add("check-gitignore")
         if "python" in content and "version" in content:
             used_rules.add("check-python-version")
+        if "return" in content and "statement" in content:
+            used_rules.add("check-return-statement")
 
-    proposed_deletion = used_rules.symmetric_difference(unused_rules)
-
-    if proposed_deletion:
-        rule = proposed_deletion.pop()
+    unused = known_rules - used_rules
+    if unused:
+        rule = sorted(unused)[0]
         return f"""## Proposed Deletion
 
 ### Rule: `{rule}`
 
-No recent run (last 30 days) has triggered or used this rule.
-It can be safely removed from `skill-lint-fix.md` to keep the skill minimal.
+No recent run has triggered or used this rule.
+It can be safely removed from the skill file to keep it minimal.
 
 Proposed change: delete the section for `{rule}` from the skill file.
 """
@@ -180,20 +202,24 @@ Proposed change: delete the section for `{rule}` from the skill file.
 
 
 def open_pr(branch: str, change_content: str, evidence: list) -> str:
-    """Push branch and open a PR (simulated locally)."""
-    subprocess.run(["git", "checkout", "-b", branch], cwd=REPO, check=True)
+    """Create branch, write proposed change, commit — push attempt (no remote = fine)."""
+    # Create branch from main
+    subprocess.run(["git", "checkout", "-b", branch], cwd=REPO, check=True, capture_output=True)
 
-    change_file = REPO / f"project-12-dreaming-loop" / "proposed-rule-change.md"
-    change_file.write_text(change_content)
+    # Write the proposed rule change
+    change_file = REPO / "project-12-dreaming-loop" / "proposed-rule-change.md"
+    change_file.parent.mkdir(parents=True, exist_ok=True)
+    change_file.write_text(change_content, encoding="utf-8")
 
-    subprocess.run(["git", "add", str(change_file)], cwd=REPO, check=True)
+    subprocess.run(["git", "add", change_file.relative_to(REPO)], cwd=REPO, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", f"dreaming-loop: propose rule change — {branch}"],
         cwd=REPO,
         check=True,
+        capture_output=True,
     )
 
-    # Try push (may fail in throwaway repo without remote — that's fine)
+    # Try push — fine if no remote (throwaway repo)
     push = subprocess.run(
         ["git", "push", "-u", "origin", branch],
         cwd=REPO,
@@ -201,7 +227,7 @@ def open_pr(branch: str, change_content: str, evidence: list) -> str:
         text=True,
     )
     if push.returncode != 0:
-        print(f"[dreaming-loop] push failed (no remote): {push.stderr.strip()}")
+        print(f"[dreaming-loop] push skipped (no remote): {push.stderr.strip()}")
 
     pr_body = f"""## Dreaming Loop: Rule Change PR
 
@@ -212,26 +238,30 @@ This PR was opened by the dreaming loop — **do not merge without human review*
 """
     pr_body += change_content
 
-    print(f"[dreaming-loop] PR would be opened with body:")
-    print(pr_body[:500] + "...")
+    print(f"[dreaming-loop] PR created — branch: {branch}")
+    print(f"[dreaming-loop] PR description:")
+    print(pr_body[:600])
+    if len(pr_body) > 600:
+        print("...")
+    print(f"[dreaming-loop] See: {change_file}")
 
-    return f"branch: {branch}, PR (simulated)"
+    return f"branch: {branch}"
 
 
 def update_dreaming_state():
-    """Update dreaming-state.md with today's date."""
+    """Update dreaming-state.md with current date + time so next run starts from here."""
     now = datetime.now()
-    state = f"# Dreaming Loop State\n\nlast run: {now.strftime('%Y-%m-%d')}\n"
+    state = f"# Dreaming Loop State\n\nlast run: {now.strftime('%Y-%m-%d %H:%M')}\n"
     DREAMING_STATE.parent.mkdir(parents=True, exist_ok=True)
-    DREAMING_STATE.write_text(state)
+    DREAMING_STATE.write_text(state, encoding="utf-8")
 
 
-def append_spine(verdict: str, evidence_count: int, pr_info: str):
+def append_spine(verdict: str, failure_count: int, pr_info: str):
     """Append this dreaming loop run to the spine."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     entry = (
         f"\n## {now} — Dreaming Loop\n\n"
-        f"- repeated failures found: {evidence_count}\n"
+        f"- failures scanned: {failure_count}\n"
         f"- verdict: {verdict}\n"
         f"- pr: {pr_info}\n"
     )
@@ -240,11 +270,25 @@ def append_spine(verdict: str, evidence_count: int, pr_info: str):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dry-run", action="store_true", help="don't push, just print")
+    parser = argparse.ArgumentParser(
+        description="Dreaming loop: find repeated failures, draft a rule-change PR."
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="create the PR for real (default: dry-run — scan and report only)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="scan and report, don't create PR (default behaviour without --live)",
+    )
     args = parser.parse_args()
 
-    print("[dreaming-loop] starting")
+    live_mode = args.live and not args.dry_run
+    mode_label = "LIVE" if live_mode else "DRY-RUN"
+
+    print(f"[dreaming-loop] starting [{mode_label}]")
 
     # Read state
     last_run = read_dreaming_state()
@@ -252,17 +296,24 @@ def main():
 
     spine_text = SPINE.read_text(encoding="utf-8") if SPINE.exists() else ""
     entries = parse_spine_entries(spine_text)
+    print(f"[dreaming-loop] total spine entries: {len(entries)}")
 
     # Filter to entries since last dreaming run
-    since_last = entries if last_run is None else [e for e in entries if e["date"] > last_run]
-    print(f"[dreaming-loop] entries since last run: {len(since_last)}")
+    # Use >= so entries from the same day as last_run are included
+    if last_run is None:
+        since_last = entries
+    else:
+        since_last = [e for e in entries if e["date"] >= last_run]
+    print(f"[dreaming-loop] entries since last run ({last_run}): {len(since_last)}")
 
     # Find repeated failures
     failures = find_repeated_failures(since_last)
     print(f"[dreaming-loop] failures found: {len(failures)}")
 
     repeated = find_repeated_corrections(failures)
-    print(f"[dreaming-loop] repeated failure patterns: {list(repeated.keys())}")
+    print(f"[dreaming-loop] repeated failure patterns: {len(repeated)}")
+    for k, v in repeated.items():
+        print(f"  - '{k[:60]}...' appears {len(v)} times")
 
     verdict = "NO_REPEATED_FAILURE"
     pr_info = "none"
@@ -276,19 +327,19 @@ def main():
 
         print(f"[dreaming-loop] drafted rule change ({len(combined)} chars)")
 
-        if not args.dry_run:
-            branch = f"dreaming/propose-rule-{int(time.time())}"
+        if live_mode:
+            branch = f"claude/dreaming-{int(time.time())}"
             pr_info = open_pr(branch, combined, list(repeated.values())[0])
             verdict = "PR_OPENED"
         else:
-            print("[dreaming-loop] DRY RUN — would open PR with:")
-            print(combined[:300])
-            print("...")
+            print("[dreaming-loop] DRY-RUN — PR not created:")
+            print(combined[:400])
+            if len(combined) > 400:
+                print("...")
             verdict = "DRY_RUN"
 
     else:
         print("[dreaming-loop] no repeated failures — nothing to propose")
-        verdict = "NO_REPEATED_FAILURE"
 
     # Update state + spine
     update_dreaming_state()

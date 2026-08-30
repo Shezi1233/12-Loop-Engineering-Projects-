@@ -213,3 +213,111 @@ Action needed: see `diagnose.py` and the spine note above.
 - repeated failures found: 7
 - verdict: DRY_RUN
 - pr: none
+
+## 2026-08-30 12:53 — Dreaming Loop
+
+- failures scanned: 7
+- verdict: DRY_RUN
+- pr: none
+
+## 2026-08-30 12:53 — Dreaming Loop
+
+- failures scanned: 0
+- verdict: NO_REPEATED_FAILURE
+- pr: none
+
+## 2026-08-28 12:54 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 5.0s
+- branch: `verify-test-1787946856`
+- engine: daily-lint-engine.py
+- reason: non-minimal diff: removed 1 ` - 1`, other changes: 0
+
+## 2026-08-29 12:54 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 5.0s
+- branch: `verify-test-1788033256`
+- engine: daily-lint-engine.py
+- reason: non-minimal diff: removed 1 ` - 1`, other changes: 0
+
+## 2026-08-30 12:54 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 5.0s
+- branch: `verify-test-1788119656`
+- engine: daily-lint-engine.py
+- reason: non-minimal diff: removed 1 ` - 1`, other changes: 0
+
+## 2026-08-30 12:54 — Dreaming Loop
+
+- failures scanned: 2
+- verdict: NO_REPEATED_FAILURE
+- pr: none
+
+## 2026-08-30 12:55 — Dreaming Loop
+
+- failures scanned: 2
+- verdict: NO_REPEATED_FAILURE
+- pr: none
+
+## 2026-08-30 12:26 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 4.5s
+- reason: non-minimal diff: removed 1 ` - 1`, other changes: 0
+
+## 2026-08-30 12:36 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 4.5s
+- reason: non-minimal diff: removed 1 ` - 1`, other changes: 0
+
+## 2026-08-30 12:46 — Daily Lint Sweep
+
+- verdict: FAIL
+- runtime: 4.5s
+- reason: non-minimal diff: removed 1 ` - 1`, other changes: 0
+
+## 2026-08-30 12:57 — Dreaming Loop
+
+- failures scanned: 1
+- verdict: NO_REPEATED_FAILURE
+- pr: none
+
+## 2026-08-30 12:55 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
+
+## 2026-08-30 12:56 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
+
+## 2026-08-30 12:57 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
+
+## 2026-08-30 13:00 — Dreaming Loop
+
+- failures scanned: 20
+- verdict: DRY_RUN
+- pr: none
+
+## 2026-08-30 12:57 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
+
+## 2026-08-30 12:58 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
+
+## 2026-08-30 12:59 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
