@@ -212,7 +212,9 @@ def open_pr(branch: str, change_content: str, evidence: list) -> str:
     change_file.write_text(change_content, encoding="utf-8")
 
     rel_path = str(change_file.relative_to(REPO)).replace("\\", "/")
-    subprocess.run(["git", "add", rel_path], cwd=REPO, check=True, capture_output=True)
+    # Use -f to bypass any .gitignore (the proposed-rule-change.md is listed
+    # there but the dreaming loop is the only legitimate writer of this file)
+    subprocess.run(["git", "add", "-f", rel_path], cwd=REPO, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", f"dreaming-loop: propose rule change — {branch}"],
         cwd=REPO,
