@@ -321,3 +321,18 @@ Action needed: see `diagnose.py` and the spine note above.
 
 - verdict: FAIL
 - reason: off-by-one in return statement
+
+## 2026-08-30 12:59 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
+
+## 2026-08-30 13:00 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement
+
+## 2026-08-30 13:01 — Daily Lint Sweep
+
+- verdict: FAIL
+- reason: off-by-one in return statement

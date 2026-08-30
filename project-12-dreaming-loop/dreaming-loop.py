@@ -211,7 +211,7 @@ def open_pr(branch: str, change_content: str, evidence: list) -> str:
     change_file.parent.mkdir(parents=True, exist_ok=True)
     change_file.write_text(change_content, encoding="utf-8")
 
-    subprocess.run(["git", "add", change_file.relative_to(REPO)], cwd=REPO, check=True, capture_output=True)
+    subprocess.run(["git", "add", str(change_file.relative_to(REPO))], cwd=REPO, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", f"dreaming-loop: propose rule change — {branch}"],
         cwd=REPO,
