@@ -8,12 +8,14 @@ A weekly-scheduled loop that:
 4. Proposes one deletion (a rule no recent run needed)
 5. Opens a PR with the change, citing evidence from the log entries
 
-NEVER commits directly — always opens a PR so a human can review before merging.
+NEVER commits directly to main — always opens a PR on a `claude/` branch
+so a human can review before merging.
 
 Usage:
-    python dreaming-loop.py --live           # create PR for repeated failures
-    python dreaming-loop.py                  # dry-run: scan, report, don't create PR
-    python dreaming-loop.py --dry-run        # same as above (explicit)
+    python dreaming-loop.py --live           # actually create a branch + PR
+    python dreaming-loop.py                  # dry-run (default): scan, report, no PR
+    python dreaming-loop.py --dry-run        # explicit dry-run
+    python dreaming-loop.py --reset-state    # reset dreaming-state.md and exit
 """
 
 import argparse
@@ -71,32 +73,36 @@ def parse_spine_entries(spine_text: str) -> list[dict]:
 def find_repeated_failures(entries: list[dict]) -> list[dict]:
     """Find failure/correction cycles that repeat across entries.
 
-    A "repeated failure" is: any entry with FAIL in its content.
-    Bucketed by failure reason to find patterns.
+    A "repeated failure" is: any non-dreaming-entry with FAIL in its content,
+    AND that has an explicit `reason:` field (not just a `verdict:` field).
+    Dreaming Loop entries are skipped — their own "verdict:" line contains FAIL
+    but they are status reports, not actual failures to act on.
     """
     failures = []
     for entry in entries:
         content = entry["content"]
-        if "FAIL" in content:
-            # Extract the failure reason — prioritize "reason:" field over "verdict:"
-            # Many entries have both: "verdict: FAIL" and "reason: <actual reason>"
-            # We want the actual reason, not just the FAIL verdict
-            reason_m = re.search(
-                r"(?:^|\n)\s*[-*]?\s*reason:\s*(.+?)(?:\n|$)",
-                content,
-                re.IGNORECASE | re.MULTILINE,
-            )
-            if reason_m:
-                reason = reason_m.group(1).strip()
-            else:
-                # Fallback: use first non-blank line of content
-                reason = content.split("\n")[0][:80]
-            failures.append({
-                "date": entry["date"],
-                "entry_type": entry["entry_type"],
-                "reason": reason,
-                "raw": entry["raw"],
-            })
+        # Skip Dreaming Loop entries — they are status reports, not failures
+        if "Dreaming Loop" in entry["entry_type"]:
+            continue
+        # Only process entries with "FAIL" that also have a real `reason:` field
+        if "FAIL" not in content:
+            continue
+        reason_m = re.search(
+            r"(?:^|\n)\s*[-*]?\s*reason:\s*(.+?)(?:\n|$)",
+            content,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if not reason_m:
+            # No explicit reason field — skip (this filters out entries whose
+            # only "FAIL" reference is in a verdict/status line)
+            continue
+        reason = reason_m.group(1).strip()
+        failures.append({
+            "date": entry["date"],
+            "entry_type": entry["entry_type"],
+            "reason": reason,
+            "raw": entry["raw"],
+        })
     return failures
 
 
@@ -202,59 +208,144 @@ Proposed change: delete the section for `{rule}` from the skill file.
 
 
 def open_pr(branch: str, change_content: str, evidence: list) -> str:
-    """Create branch, write proposed change, commit — push attempt (no remote = fine)."""
-    # Create branch from main
-    subprocess.run(["git", "checkout", "-b", branch], cwd=REPO, check=True, capture_output=True)
+    """Create a `claude/` branch, write the proposed change, commit, and
+    produce a PR body that cites the evidence (which runs, how often, why
+    this fix stops it). Never commits to main directly.
 
-    # Write the proposed rule change
+    Returns a string of the form "branch: <name>" so progress.md can log it.
+    """
+    # 1. Stash any dirty working-tree changes (e.g. progress.md edits) so
+    #    the new branch is a clean copy of main. We pop the stash at the end
+    #    so the user keeps their work.
+    stash_proc = subprocess.run(
+        ["git", "stash", "push", "-m", "dreaming-loop: auto-stash before branch switch"],
+        cwd=REPO, capture_output=True, text=True,
+    )
+    stashed = "No local changes to save" not in (stash_proc.stdout or "")
+
+    # 2. Switch back to main (if not already there) so we branch off a clean state
+    current_branch_proc = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=REPO, check=True, capture_output=True, text=True,
+    )
+    current_branch = (current_branch_proc.stdout or "").strip() or "main"
+
+    if current_branch != "main":
+        subprocess.run(
+            ["git", "checkout", "main"],
+            cwd=REPO, check=True, capture_output=True,
+        )
+
+    # 3. Create the claude/ branch (use -B so it's idempotent if re-run)
+    subprocess.run(
+        ["git", "checkout", "-B", branch],
+        cwd=REPO, check=True, capture_output=True,
+    )
+
+    # 4. Write the proposed rule change to the working tree
     change_file = REPO / "project-12-dreaming-loop" / "proposed-rule-change.md"
     change_file.parent.mkdir(parents=True, exist_ok=True)
     change_file.write_text(change_content, encoding="utf-8")
 
     rel_path = str(change_file.relative_to(REPO)).replace("\\", "/")
-    # Use -f to bypass any .gitignore (the proposed-rule-change.md is listed
+    # Use -f to bypass any .gitignore (proposed-rule-change.md is listed
     # there but the dreaming loop is the only legitimate writer of this file)
     subprocess.run(["git", "add", "-f", rel_path], cwd=REPO, check=True, capture_output=True)
+
+    # Build evidence citation for the commit message
+    evidence_citation = ""
+    if evidence:
+        evidence_citation = "\n\nEvidence:\n" + "\n".join(
+            f"- [{f['date'].strftime('%Y-%m-%d %H:%M')}] {f['entry_type']}: {f['reason']}"
+            for f in evidence
+        )
+
+    commit_msg = f"dreaming-loop: propose rule change — {branch}{evidence_citation}"
     subprocess.run(
-        ["git", "commit", "-m", f"dreaming-loop: propose rule change — {branch}"],
-        cwd=REPO,
-        check=True,
-        capture_output=True,
+        ["git", "commit", "-m", commit_msg],
+        cwd=REPO, check=True, capture_output=True,
     )
 
-    # Try push — fine if no remote (throwaway repo)
-    push = subprocess.run(
-        ["git", "push", "-u", "origin", branch],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-    )
-    if push.returncode != 0:
-        print(f"[dreaming-loop] push skipped (no remote): {push.stderr.strip()}")
-
+    # 5. Build the PR body. It MUST cite the evidence (which runs, how often)
+    #    and the reason this fix stops the repeat. The proposed-rule-change.md
+    #    IS the draft PR body — it's already cited above.
     pr_body = f"""## Dreaming Loop: Rule Change PR
 
-Evidence from {len(evidence)} repeated failure entries in progress.md.
+**Branch:** `{branch}`
+**Draft file:** `{rel_path}`
+**Repeated-failure instances:** {len(evidence)}
 
-This PR was opened by the dreaming loop — **do not merge without human review**.
+### Evidence (cited from progress.md)
 
 """
-    pr_body += change_content
+    for f in evidence:
+        pr_body += f"- [{f['date'].strftime('%Y-%m-%d %H:%M')}] {f['entry_type']}: {f['reason']}\n"
 
-    print(f"[dreaming-loop] PR created — branch: {branch}")
-    print(f"[dreaming-loop] PR description:")
-    print(pr_body[:600])
-    if len(pr_body) > 600:
+    pr_body += f"""
+
+### Why this fix stops the repeat
+
+This change was drafted because the same failure reason appeared
+**{len(evidence)} times** in the scoped window. The new pre-check rule
+forces the implementer to verify the off-by-one pattern before patching,
+preventing the blind-remove-of-`-1` behaviour that produced the repeated
+failures above.
+
+---
+
+{change_content}
+
+---
+
+**Do not merge without human review.** The dreaming loop NEVER commits to
+main directly — this PR is a proposal, you decide to merge.
+"""
+
+    # Also write the PR body to a sibling file so the user can inspect it
+    pr_file = REPO / "project-12-dreaming-loop" / "pr-body.md"
+    pr_file.write_text(pr_body, encoding="utf-8")
+
+    # 6. Try push — fine if no remote (throwaway repo)
+    push = subprocess.run(
+        ["git", "push", "-u", "origin", branch],
+        cwd=REPO, capture_output=True, text=True,
+    )
+    if push.returncode != 0:
+        # No remote is expected; that's fine
+        pass
+
+    # 7. Switch back to main and pop the stash so the user keeps their work
+    subprocess.run(
+        ["git", "checkout", "main"],
+        cwd=REPO, check=True, capture_output=True,
+    )
+    if stashed:
+        subprocess.run(
+            ["git", "stash", "pop"],
+            cwd=REPO, capture_output=True, text=True,
+        )
+
+    print(f"[dreaming-loop] PR OPENED — branch: {branch}")
+    print(f"[dreaming-loop] PR description (first 800 chars):")
+    print(pr_body[:800])
+    if len(pr_body) > 800:
         print("...")
-    print(f"[dreaming-loop] See: {change_file}")
+    print(f"[dreaming-loop] Draft file: {change_file}")
+    print(f"[dreaming-loop] PR body file: {pr_file}")
+    print(f"[dreaming-loop] (open a PR with: gh pr create --base main --head {branch} --body-file {pr_file})")
 
     return f"branch: {branch}"
 
 
-def update_dreaming_state():
-    """Update dreaming-state.md with current date + time so next run starts from here."""
-    now = datetime.now()
-    state = f"# Dreaming Loop State\n\nlast run: {now.strftime('%Y-%m-%d %H:%M')}\n"
+def update_dreaming_state(marker: datetime = None):
+    """Update dreaming-state.md with the highest entry timestamp processed.
+
+    marker: the latest entry's datetime. If None, use the current time.
+    On the next run, only entries with date > marker are processed.
+    """
+    if marker is None:
+        marker = datetime.now()
+    state = f"# Dreaming Loop State\n\nlast run: {marker.strftime('%Y-%m-%d %H:%M')}\n"
     DREAMING_STATE.parent.mkdir(parents=True, exist_ok=True)
     DREAMING_STATE.write_text(state, encoding="utf-8")
 
@@ -279,15 +370,30 @@ def main():
     parser.add_argument(
         "--live",
         action="store_true",
-        help="create the PR for real (default: dry-run — scan and report only)",
+        help="create the PR for real on a claude/ branch (default: dry-run — scan and report only)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="scan and report, don't create PR (default behaviour without --live)",
     )
+    parser.add_argument(
+        "--reset-state",
+        action="store_true",
+        help="reset dreaming-state.md and exit (forces a full re-scan of progress.md)",
+    )
     args = parser.parse_args()
 
+    # --reset-state: wipe state and bail out before any scanning
+    if args.reset_state:
+        print("[dreaming-loop] --reset-state: clearing dreaming-state.md")
+        if DREAMING_STATE.exists():
+            DREAMING_STATE.unlink()
+        print("[dreaming-loop] dreaming-state.md removed. Next run will scan all entries.")
+        return
+
+    # Live mode is when --live is passed and --dry-run is NOT passed.
+    # Default (no flags) = dry-run for safety.
     live_mode = args.live and not args.dry_run
     mode_label = "LIVE" if live_mode else "DRY-RUN"
 
@@ -302,11 +408,12 @@ def main():
     print(f"[dreaming-loop] total spine entries: {len(entries)}")
 
     # Filter to entries since last dreaming run
-    # Use >= so entries from the same day as last_run are included
+    # Use > (strict) so the marker always moves forward — once an entry is
+    # processed, it will never be re-scanned.
     if last_run is None:
         since_last = entries
     else:
-        since_last = [e for e in entries if e["date"] >= last_run]
+        since_last = [e for e in entries if e["date"] > last_run]
     print(f"[dreaming-loop] entries since last run ({last_run}): {len(since_last)}")
 
     # Find repeated failures
@@ -345,7 +452,13 @@ def main():
         print("[dreaming-loop] no repeated failures — nothing to propose")
 
     # Update state + spine
-    update_dreaming_state()
+    # Marker = highest entry timestamp processed (so next run starts strictly
+    # AFTER this point). If no entries were processed, marker = current time.
+    if entries:
+        marker = max(e["date"] for e in entries)
+    else:
+        marker = datetime.now()
+    update_dreaming_state(marker)
     append_spine(verdict, len(failures), pr_info)
 
     print(f"[dreaming-loop] DONE — verdict: {verdict}")

@@ -366,3 +366,44 @@ Action needed: see `diagnose.py` and the spine note above.
 
 - verdict: FAIL
 - reason: off-by-one in return statement
+
+## 2026-08-30 13:41 — Dreaming Loop
+
+- failures scanned: 21
+- verdict: PR_OPENED
+- pr: branch: claude/dreaming-1788122469
+
+## 2026-08-30 13:46 — Dreaming Loop
+
+- failures scanned: 27
+- verdict: DRY_RUN
+- pr: none
+
+## 2026-08-30 13:47 — Dreaming Loop
+
+- failures scanned: 27
+- verdict: PR_OPENED
+- pr: branch: claude/dreaming-1788122860
+
+## 2026-08-30 13:48 — Dreaming Loop
+
+- failures scanned: 0
+- verdict: NO_REPEATED_FAILURE
+- pr: none
+
+## 2026-08-30 13:48 — Dreaming Loop
+
+- failures scanned: 0
+- verdict: NO_REPEATED_FAILURE
+- pr: none
+
+## 2026-08-30 13:48 — Dreaming Loop Verification
+
+- verdict: PR_OPENED (live mode test)
+- branch: claude/dreaming-1788122860
+- evidence: 6 cited instances of 'non-minimal diff: removed 1 `- 1`, other changes: 0'
+- test 1 (no failures): NO_REPEATED_FAILURE ✅
+- test 2 (live mode): PR_OPENED, branch created on claude/, evidence cited ✅
+- test 3 (re-run 1): entries since last run: 1, failures: 0 ✅
+- test 4 (re-run 2): entries since last run: 1, failures: 0 ✅
+- bugs fixed: open_pr now creates claude/ branch (not main), --live flag works, --reset-state added, find_repeated_failures skips Dreaming Loop entries

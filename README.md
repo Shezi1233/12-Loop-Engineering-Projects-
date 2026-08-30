@@ -42,7 +42,7 @@ Clone or open the folder, read the project README, and follow its instructions.
 | 9 | Rehearse routine free | ✅ Fully verified — success and fail transcripts correct |
 | 10 | Secrets drill | ✅ Fully verified — both env-file and env-var modes work |
 | 11 | Two-routine gate | ✅ Fully verified — Routine A drafts, Routine B publishes |
-| 12 | Dreaming loop | ✅ Fully verified — finds repeated failures, drafts PR |
+| 12 | Dreaming loop | ✅ Fully verified — finds repeated failures, drafts PR, state persists across runs |
 
 ## Bugs fixed during testing (all verified)
 
@@ -58,3 +58,4 @@ Clone or open the folder, read the project README, and follow its instructions.
 10. **Project 8 (reviewer.py):** Compared working-tree diff vs HEAD (uncommitted changes). Fixed: `git diff main --` to compare against base branch.
 11. **Project 12 (dreaming-loop.py):** No encoding specified when reading spine. Fixed: `encoding="utf-8"` on read_text().
 12. **Projects 4, 5, 8, 11:** Each project required `git init` + `main` branch to be set up locally (no remote).
+13. **Project 12 (dreaming-loop.py):** `open_pr()` committed directly to the current branch instead of a `claude/` branch, and the PR body had no evidence citation. Fixed: now checks out `main`, creates `claude/dreaming-<ts>` branch, commits the proposed change there, and the PR body cites all evidence (timestamps, entry types, reasons) plus why the fix stops the repeat. Added `--live` flag for explicit live mode (default remains dry-run for safety) and `--reset-state` to force a full re-scan.

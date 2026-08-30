@@ -17,6 +17,7 @@ should also propose one deletion (a rule no recent run needed).
 - The PR's proposed change traces to real cited log entries
 - A deliberately planted repeated failure gets caught
 - Nothing changes without you merging it
+- State persistence confirmed: repeated-failure count is stable across runs
 
 ## Skills used
 
@@ -31,34 +32,38 @@ should also propose one deletion (a rule no recent run needed).
 ```bash
 cd project-12-dreaming-loop
 
-# 1. (Optional) Plant a repeated failure pattern to demonstrate the loop
+# (Optional) Plant a repeated failure pattern to demo the loop
 python setup-repeated-failures.py
 # → adds 3 dated entries to ../progress.md with the same FAIL reason
 
-# 2. Run the dreaming loop (dry-run first)
-python dreaming-loop.py --dry-run
-# → reads progress.md
+# Dry-run: scan progress.md, report, don't create a PR
+python dreaming-loop.py --dry-run    # explicit
+python dreaming-loop.py              # also dry-run (default for safety)
 # → finds 3 repeated failures
-# → drafts a rule change + a deletion
-# → prints the proposed PR body
+# → drafts rule change + deletion, prints the draft
+# → progress.md entry: verdict: DRY_RUN, pr: none
 
-# 3. Run for real (creates a branch + simulated PR)
-python dreaming-loop.py
-# → branch: dreaming/propose-rule-<ts>
-# → commits proposed-rule-change.md
-# → "PR would be opened" (simulated locally)
+# Live mode: actually create a PR
+python dreaming-loop.py --live
+# → creates branch: claude/dreaming-<ts>
+# → commits proposed-rule-change.md to that branch
+# → writes pr-body.md with evidence citations
+# → progress.md entry: verdict: PR_OPENED, pr: branch: claude/dreaming-<ts>
+# → prints: "gh pr create --base main --head <branch> --body-file pr-body.md"
 
-# 4. Inspect the proposal
-cat proposed-rule-change.md
+# Reset state (forces full re-scan of all progress.md entries)
+python dreaming-loop.py --reset-state
 ```
 
-**The dreaming loop:**
-- Reads all `progress.md` entries since its last `dreaming-state.md` date
-- Buckets failures by reason, finds any with ≥2 occurrences
-- Drafts a small skill-file change to prevent the most-repeated failure
-- Proposes one deletion (a rule no recent run needed)
-- Opens a PR (never commits to main)
-- Updates its own state file so the next run only sees new entries
+### Live vs dry-run mode
+
+| Flag | What it does |
+|------|-------------|
+| (none) / `--dry-run` | Scans and reports; `pr: none` in progress.md |
+| `--live` | Creates `claude/` branch, commits, cites evidence, logs `pr: branch: …` |
+
+The default is **dry-run** so a casual `python dreaming-loop.py` call never
+produces a real PR. Use `--live` intentionally when you want the PR.
 
 ## Files
 
@@ -67,7 +72,9 @@ cat proposed-rule-change.md
 | `dreaming-loop.py` | The weekly reflection engine |
 | `setup-repeated-failures.py` | Plants 3 dated FAIL entries to demo the loop |
 | `.github/workflows/dreaming.yml` | Weekly cron (04:00 UTC Sunday) + manual |
-| `dreaming-state.md` | Created on first run; tracks "last run" date |
+| `dreaming-state.md` | Tracks "last run" date; filters entries on next run |
+| `proposed-rule-change.md` | Draft skill change (written in live mode) |
+| `pr-body.md` | PR description body (written in live mode) |
 
 ## Why "PR, never commit"
 
@@ -75,34 +82,26 @@ The dreaming loop proposes changes to *itself* and to other skills. It must
 not be able to merge those changes without a human reading them first.
 That's why the output is a PR — you read the evidence, you decide to merge.
 
+## State persistence
+
+`dreaming-state.md` records the last-checked timestamp. Each run:
+1. Reads the marker
+2. Only processes `progress.md` entries newer than the marker
+3. Writes the new marker back before exiting
+
+This prevents the same repeated-failure pattern from being reported multiple
+times. Use `--reset-state` to force a full re-scan.
+
 ## Test Status
 
-⚠️ **NOT YET TESTED**
+✅ **FULLY VERIFIED**
 
-**To verify (next session):**
-```bash
-cd project-12-dreaming-loop
-# Setup git (in root, since dreaming-loop reads parent progress.md)
-cd ..
-git init && git add . && git commit -m "initial" && git checkout -b main
-cd project-12-dreaming-loop
+Verified (2026-08-30):
+1. Reset state (`--reset-state`), run with no repeated failures → `verdict: NO_REPEATED_FAILURE`, `pr: none`
+2. Planted 3 repeated failures, ran `--live` → created `claude/` branch, `proposed-rule-change.md`, `pr-body.md` with evidence citations, logged `pr: branch: claude/dreaming-<ts>` in progress.md
+3. Ran 2 more times with no new failures → count stayed stable (state correctly persisted)
 
-# 1. Plant repeated failures to demonstrate
-python setup-repeated-failures.py
-# → adds 3 dated FAIL entries to ../progress.md
-
-# 2. Dry run
-python dreaming-loop.py --dry-run
-# → finds 3 repeated failures
-# → drafts rule change + deletion
-# → prints PR body (no push)
-
-# 3. Real run
-python dreaming-loop.py
-# → branch: dreaming/propose-rule-<ts>
-# → commits proposed-rule-change.md
-# → "PR would be opened"
-
-# 4. Inspect the proposal
-cat proposed-rule-change.md
-```
+Bugs fixed during verification:
+- `open_pr()` now creates a `claude/` branch (not a direct commit to main) and cites evidence in the PR body
+- `--reset-state` flag added for manual state control
+- `find_repeated_failures()` now skips Dreaming Loop entries (which contain "FAIL" in their own status reports)
