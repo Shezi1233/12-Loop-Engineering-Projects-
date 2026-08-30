@@ -1,0 +1,14 @@
+# Local cron entry for the morning brief (Concept 6 + 12).
+#
+# Install with:
+#   crontab -e
+# then paste the line below (edit the path to your repo).
+#
+# ┌──────── minute (0)
+# │ ┌────── hour (9 = 09:00 local)
+# │ │ ┌──── day of month (*)
+# │ │ │ ┌── month (*)
+# │ │ │ │ ┌ day of week (*)
+# │ │ │ │ │
+# │ │ │ │ │
+0 9 * * *  cd /FULL/PATH/TO/loop-engineering-practice/project-03-morning-brief-memory && /usr/bin/python3 morning-brief.py >> morning-brief.cron.log 2>&1

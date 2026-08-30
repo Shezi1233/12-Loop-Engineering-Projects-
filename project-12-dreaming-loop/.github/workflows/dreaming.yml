@@ -1,0 +1,26 @@
+name: dreaming-loop
+
+# Weekly-scheduled dreaming loop.
+# Reads progress.md, finds repeated failures, drafts a rule-change PR.
+# Never commits directly to main — only opens PRs.
+
+on:
+  schedule:
+    - cron: "0 4 * * 0"     # 04:00 UTC every Sunday
+  workflow_dispatch:        # manual trigger
+
+concurrency: dreaming-loop
+permissions:
+  contents: write          # can push branch + open PR
+  pull-requests: write     # can open the PR
+
+jobs:
+  dream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: cd project-12-dreaming-loop && python dreaming-loop.py

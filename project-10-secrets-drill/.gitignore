@@ -1,0 +1,10 @@
+# Ignore .env — secrets should never be committed
+.env
+.env.*
+!.env.example
+
+# Other run artifacts
+.transcripts/
+token-used.txt
+__pycache__/
+*.pyc

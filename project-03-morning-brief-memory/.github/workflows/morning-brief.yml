@@ -1,0 +1,33 @@
+name: morning-brief
+
+# Scheduled loop: runs once on a schedule, reads the spine,
+# gathers repo TODOs, and appends a dated summary.
+# No secrets required — this is a throwaway exercise repo.
+
+on:
+  schedule:
+    - cron: "0 9 * * *"   # every day at 09:00 UTC — edit to your local time
+  workflow_dispatch:      # also fire it manually from the Actions tab
+
+concurrency: morning-brief
+permissions:
+  contents: write        # so it can push the spine update
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: cd project-03-morning-brief-memory && python morning-brief.py
+      - name: commit spine update
+        run: |
+          git config user.name "morning-brief bot"
+          git config user.email "bot@example.com"
+          git add ../progress.md
+          git diff --cached --quiet || git commit -m "morning-brief: daily summary"
+          git push

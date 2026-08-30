@@ -1,0 +1,4 @@
+.transcripts/
+yesterday-summary.md
+__pycache__/
+*.pyc
